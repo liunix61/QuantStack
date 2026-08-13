@@ -16,9 +16,10 @@ add_library(quantstack_lib STATIC
     src/connection_pool.cpp
     src/risk_control.cpp
     src/serializer_cache.cpp
+    src/memory_pool.cpp
 )
 
-target_link_libraries(quantstack_lib pthread)
+target_link_libraries(quantstack_lib pthread taskflow)
 
 # Catch2测试框架
 include(FetchContent)
@@ -44,3 +45,27 @@ target_link_libraries(tests quantstack_lib catch2::catch2)
 # CTest配置
 enable_testing()
 add_test(NAME AllTests COMMAND tests)
+
+# 内存泄漏检测（可选）
+option(QUANTSTACK_ENABLE_ASAN "Enable AddressSanitizer" OFF)
+if(QUANTSTACK_ENABLE_ASAN)
+    target_compile_options(tests PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_link_options(tests PRIVATE -fsanitize=address)
+    message(STATUS "✅ AddressSanitizer enabled")
+endif()
+
+# 性能分析（可选）
+option(QUANTSTACK_ENABLE_GPROF "Enable gprof profiling" OFF)
+if(QUANTSTACK_ENABLE_GPROF)
+    target_compile_options(tests PRIVATE -pg -fno-omit-frame-pointer)
+    target_link_options(tests PRIVATE -pg)
+    message(STATUS "✅ gprof profiling enabled")
+endif()
+
+# 性能分析（可选）
+option(QUANTSTACK_ENABLE_PERF "Enable perf profiling" OFF)
+if(QUANTSTACK_ENABLE_PERF)
+    target_compile_options(tests PRIVATE -fno-omit-frame-pointer)
+    target_link_options(tests PRIVATE -fno-omit-frame-pointer)
+    message(STATUS "✅ perf profiling enabled")
+endif()

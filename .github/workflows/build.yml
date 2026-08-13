@@ -1,0 +1,133 @@
+name: QuantStack CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          ninja-build \
+          libboost-all-dev \
+          libssl-dev \
+          libdpdk-dev
+    
+    - name: Configure CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+          -DQUANTSTACK_ENABLE_ASAN=OFF \
+          -DQUANTSTACK_ENABLE_GPROF=OFF \
+          -DQUANTSTACK_ENABLE_PERF=OFF \
+          ..
+    
+    - name: Build
+      run: |
+        cd build
+        ninja -j$(nproc)
+    
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure --verbose
+    
+    - name: Upload artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: quantstack-binary
+        path: build/quantstack_demo
+
+  build-with-sanitizer:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build
+    
+    - name: Configure CMake with ASan
+      run: |
+        mkdir -p build-asan
+        cd build-asan
+        cmake -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DQUANTSTACK_ENABLE_ASAN=ON \
+          -DQUANTSTACK_ENABLE_GPROF=OFF \
+          ..
+    
+    - name: Build with ASan
+      run: |
+        cd build-asan
+        ninja -j$(nproc)
+    
+    - name: Run tests with ASan
+      run: |
+        cd build-asan
+        ctest --output-on-failure
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install cppcheck
+      run: sudo apt-get install -y cppcheck
+    
+    - name: Run cppcheck
+      run: |
+        cppcheck --enable=all --std=c++20 \
+          --error-exitcode=1 \
+          --suppress=missingIncludeSystem \
+          include/ src/
+    
+    - name: Run clang-tidy (if available)
+      run: |
+        if command -v clang-tidy &> /dev/null; then
+          clang-tidy include/ src/ --warnings-as-errors=* --config-file=.clang-tidy
+        fi
+
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build libboost-all-dev
+    
+    - name: Build
+      run: |
+        mkdir -p build
+        cd build
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+        ninja -j$(nproc)
+    
+    - name: Run benchmarks
+      run: |
+        cd build
+        ./quantstack_demo --benchmark
